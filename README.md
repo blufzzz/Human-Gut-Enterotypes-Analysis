@@ -1,5 +1,5 @@
 # Human Gut Microbiome Analysis
-Code for "Absence of enterotypes in the human gut microbiomes reanalyzed with non-linear dimensionality reduction method" paper.
+Code for __"Absence of enterotypes in the human gut microbiomes reanalyzed with non-linear dimensionality reduction method"__ paper.
 It is advised to run notebooks in the order mentioned below:
 
 1. Preprocessing.ipynb
