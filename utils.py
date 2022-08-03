@@ -40,8 +40,8 @@ def KNN_MAE(X, Z, averaging=None, weights='uniform', n_neighbors=4):
         X_pred = X[Z_kneighbors[:,1:]].mean(1)
     elif weights=='distance':
         D = Z_kdistance[:,1:] + 1e-9
-        D = 1./D 
-        D = D / D.sum(1)[:,None]
+        D = 1./D # create weights of linear combination
+        D = D/D.sum(1)[:,None]
         D = D[:,:,None]
         X_pred = X[Z_kneighbors[:,1:]] * D
         X_pred = X_pred.sum(1)
@@ -115,7 +115,7 @@ def entropy(x):
     return -(x*np.log(x)).sum()
 
     
-def project(data, ev_threshold=0.99, random_state=42):
+def project_pca(data, ev_threshold=0.99, whiten=True, centering=True, random_state=42):
     
     '''
     Compute PCA projection that preserves `ev_threshold` explained variance
@@ -124,14 +124,17 @@ def project(data, ev_threshold=0.99, random_state=42):
     '''
     
     d = data.shape[1]
-    data_centered = data - data.mean(0)[None,...]
-    pca = PCA(svd_solver='full', random_state=random_state)
+    if centering:
+        data_centered = data - data.mean(0)[None,...]
+    else:
+        data_centered = data
+    pca = PCA(svd_solver='full', whiten=whiten, random_state=random_state)
     pca.fit(data_centered)
     
     explained_variance = pca.explained_variance_ratio_
     ev_num = np.arange(1,d+1)[np.cumsum(explained_variance) >= ev_threshold]
     ev_num = ev_num[0]
-    pca_proj = PCA(n_components=ev_num,svd_solver='full',random_state=random_state)
+    pca_proj = PCA(n_components=ev_num, whiten=whiten, svd_solver='full',random_state=random_state)
     data_projected = pca_proj.fit_transform(data_centered)
     mae = np.percentile(l1_normalized_error(pca_proj.inverse_transform(data_projected), data_centered), 50)
     
@@ -173,13 +176,12 @@ def transform(method, X, dim, parameters, scorer):
     return score
 
 
-def calculate_Q_mae(X, Z, D=None, precomputed=False, mae_scorer=None):
+def calculate_Q_metrics(X, Z, D=None, precomputed=False):
     '''
     Calculates co-ranking matrix based metrics Q_loc and Q_glob
     X: np.ndarray [N,d1] - data
     Z: np.ndarray [N,d2] - embedding (d2 <= d)
     D: pairwise distance matrices for original data if precomputed=True
-    mae_scorer: function that given original data X and embedding Z returns MAE embedding quality
     '''
     
     if precomputed:
@@ -187,25 +189,24 @@ def calculate_Q_mae(X, Z, D=None, precomputed=False, mae_scorer=None):
     else:
         Q = coranking_matrix(X, Z)
     
-    m = X.shape[0]
+    N = X.shape[0]
     UL_cumulative = 0 
     Q_k = []
     LCMC_k = []
-    for k in range(0, Q.shape[0]):
+    
+    for k in range(Q.shape[0]):
         r = Q[k:k+1,:k+1].sum()
         c = Q[:k,k:k+1].sum()
+
         UL_cumulative += (r+c)
-        Qnk = UL_cumulative/((k+1)*m) 
+        Qnk = UL_cumulative/((k+1)*N) 
+
         Q_k.append(Qnk)
-        LCMC_k.append(Qnk - ((k+1)/(m-1)))
+        LCMC_k.append(Qnk - ((k+1)/(N-1)))
+
+    k_max = np.argmax(LCMC_k) + 1
+
+    Q_loc = (1./(k_max))*np.sum(Q_k[:k_max])
+    Q_glob = (1./(N-k_max-1))*np.sum(Q_k[k_max:]) 
     
-    argmax_k = np.argmax(LCMC_k)
-    k_max = np.arange(1.,m)[argmax_k]
-    Q_loc = (1./k_max)*np.sum(Q_k[:argmax_k+1])
-    Q_glob = (1./(m-k_max))*np.sum(Q_k[argmax_k+1:])
-    
-    mae = None
-    if mae_scorer is not None:
-        mae = mae_scorer(X, Z)
-    
-    return Q_loc, Q_glob, mae
+    return [Q_loc, Q_glob]
