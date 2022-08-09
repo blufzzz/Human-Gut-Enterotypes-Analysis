@@ -121,9 +121,11 @@ def plot_clustering_scatter(metrics_df,
     plt.show()
 
 
-def clustering_by_methods(data, methods_dict, precomputed=False, d=None):
+def clustering_by_methods(data, methods_dict, precomputed=False, d=None, verbose=False, cluster_perc_threshold=0.01):
     '''
-    Perform clustering of `data` for each method in `methods_dict`
+    Perform clustering of `data` for each method and 
+    hyperparameters combination inferred from the `methods_dict`
+    
     data: np.ndarray [N,d]
     methods_dict: dict of pairs {'class_name':[class, params_dict], ...}
     e.g.
@@ -148,15 +150,20 @@ def clustering_by_methods(data, methods_dict, precomputed=False, d=None):
     precomputed: bool - whether use precomputed distances, then data treated as pairwise distance matrix [N,N]
     d: dataset dimensionality d (useful when precomputed=True)
     '''
-    results = []
+    
+    results = {}
     for method_name, [method_class, param_range] in methods_dict.items():
-        
-        cluster_metrics, cluster_results = clustering(data, 
-                                                        method_class, 
-                                                        param_range,
-                                                        precomputed,
-                                                        d=d)
-        results.append([cluster_metrics, cluster_results])
+        if verbose:
+            print('----------------------------')
+            print('Clustering for', method_name)
+        cluster_results = clustering(data, 
+                                    method_class, 
+                                    param_range,
+                                    precomputed,
+                                    d=d,
+                                    verbose=verbose,
+                                    cluster_perc_threshold=cluster_perc_threshold)
+        results[method_name] = cluster_results
     return results
 
 
@@ -177,12 +184,10 @@ def clustering(dataset,
     d: int - The number of features (dimension) of the dataset.
     '''
     
-    cluster_metrics = defaultdict(list) # clustering metrics
-    cluster_results = defaultdict(list) # partition results
+    cluster_results = [] # partition results
     
     for p in ParameterGrid(param_dict):
         
-        metrics = {}
         results = {}
         
         method = method_class(**p)
@@ -194,15 +199,17 @@ def clustering(dataset,
             
             # consider only non-noise clusters
             non_noise_mask = pred != -1
+            noise_mask = pred == -1
             
             # if too much noise - continue
-            if sum(non_noise_mask)/len(non_noise_mask) < 0.6:
+            if sum(noise_mask)/len(noise_mask) > 0.4:
                 if verbose:
                     print(f'Too much nose, skipping for p={p}, {method_class.__name__}')
                 continue
             
             # filter-out small clusters
             abundance_mask = np.zeros(len(pred), dtype=bool)
+            # iterating over non-noise classified points
             for k in np.unique(pred[non_noise_mask]): 
                 # more than 1% of the data
                 if sum(pred==k)/sum(non_noise_mask) > cluster_perc_threshold:
@@ -213,7 +220,8 @@ def clustering(dataset,
             mask = abundance_mask
             results['mask'] = abundance_mask
             # all data was separated into small clumps
-            data_used = mask.sum()/len(pred)
+            data_used = mask.sum()/len(mask)
+            significant_clusters = pred[mask]
             
             if data_used < 0.5:
                 if verbose:
@@ -221,45 +229,44 @@ def clustering(dataset,
                 continue
             
             # no outliers left
-            assert (pred[mask] >= 0).all()
+            assert (significant_clusters >= 0).all()
             # all clusters contain more that 1% of data
-            assert Counter(pred[mask]).most_common()[-1][1]/sum(non_noise_mask) > cluster_perc_threshold
+            assert Counter(significant_clusters).most_common()[-1][1]/sum(non_noise_mask) > cluster_perc_threshold
             
-            unique_clusters = np.unique(pred[mask])
+            unique_clusters = np.unique(significant_clusters)
             n = len(unique_clusters) # number of clusters
             
             # re-numerated unique_clusters labels
             labels = np.zeros((sum(mask)), dtype=int)
             for i,k in enumerate(unique_clusters):
-                labels[pred[mask]==k] = i
+                labels[significant_clusters==k] = i
             results['labels'] = labels
             
             if n > 1:
                 if precomputed:
-                    metrics['dbind'] = davies_bouldin_score_precomputed(dataset[mask][:,mask], labels)
-                    metrics['silh'] = silhouette_score(dataset[mask][:,mask], labels, metric='precomputed')
-                    metrics['dbcv'] = DBCV(dataset[mask][:,mask], labels, metric='precomputed', d=d)
-                    metrics['ps'] = prediction_strength_CV_precomputed(dataset[mask][:,mask], method)
+                    results['dbind'] = davies_bouldin_score_precomputed(dataset[mask][:,mask], labels)
+                    results['silh'] = silhouette_score(dataset[mask][:,mask], labels, metric='precomputed')
+                    results['dbcv'] = DBCV(dataset[mask][:,mask], labels, metric='precomputed', d=d)
+                    results['ps'] = prediction_strength_CV_precomputed(dataset[mask][:,mask], method)
 
                 else:
-                    metrics['dbind'] = davies_bouldin_score(dataset[mask], labels)
-                    metrics['silh'] = silhouette_score(dataset[mask], labels)
-                    metrics['dbcv'] = DBCV(dataset[mask], labels)
-                    metrics['ps'] = prediction_strength_CV(dataset[mask], method) 
+                    results['dbind'] = davies_bouldin_score(dataset[mask], labels)
+                    results['silh'] = silhouette_score(dataset[mask], labels)
+                    results['dbcv'] = DBCV(dataset[mask], labels)
+                    results['ps'] = prediction_strength_CV(dataset[mask], method) 
 
                 # data mass distribution
                 cl_dist = np.ones(n)
-                for i,cl_number in enumerate(np.unique(labels)):
-                    cl_dist[i] = sum(labels == cl_number)/sum(mask)
+                for i in range(n):
+                    cl_dist[i] = sum(labels == i)/sum(mask)
 
-                metrics['noise_ratio'] = sum(pred == -1)/len(pred)
-                metrics['entropy'] = entropy(cl_dist)
-                metrics['data_used'] = data_used
-                metrics['dist'] = cl_dist
+                results['noise_ratio'] = sum(noise_mask)/len(noise_mask)
+                results['entropy'] = entropy(cl_dist)
+                results['data_used'] = data_used
+                results['dist'] = cl_dist
 
                 # for each [n] there may be more than 1 partition!
-                cluster_metrics[n].append(metrics) 
-                cluster_results[n].append(results)
+                cluster_results.append(results)
                 
             else:
                 if verbose:
@@ -272,7 +279,7 @@ def clustering(dataset,
                 print(f'No clusters found for p={p}, {method_class.__name__}')
             continue
                 
-    return cluster_metrics, cluster_results
+    return cluster_results
 
 
 def davies_bouldin_score_precomputed(D, labels):
@@ -320,20 +327,28 @@ def prediction_strength(y_pred, y_test):
     counts = []
     
     for k in test_clusters:
+        
+        # noise cluster
+        if k == -1:
+            continue
+        
         mask = y_test == k
         n_k = mask.sum()
-
-        c = Counter(y_pred[mask])
         
-        count = c.most_common(1)[0][1]
-        count = count * (count - 1) # number of pairs that fall in the same cluster given train decision function
-        count /= (n_k * (n_k - 1)) # divided by the total number of pairs in cluster
+        # number of points more than 1 in cluster
+        if n_k > 1:
 
-        counts.append(count)
-    return min(counts)
+            c = Counter(y_pred[mask])
+            count = c.most_common(1)[0][1]
+            count = count * (count - 1) # number of pairs that fall in the same cluster given train decision function
+            count /= (n_k * (n_k - 1)) # divided by the total number of pairs in cluster
+
+            counts.append(count)
+            
+    return min(counts) if len(counts) > 0 else 0
 
 
-def prediction_strength_CV_precomputed(D, method, n_splits=3):
+def prediction_strength_CV_precomputed(D, method, n_splits=3, knn=5):
     
     '''
     Calculates Prediction Strength for precomputed data D
@@ -355,8 +370,8 @@ def prediction_strength_CV_precomputed(D, method, n_splits=3):
         D_test = D[test_index][:,test_index]
         y_test = method.fit_predict(D_test)
         
-        D_ = D[test_index][:,train_index]
-        y_pred = y_train[np.argsort(D_, axis=1)[:,:4]]
+        D_ = D[test_index][:,train_index] 
+        y_pred = y_train[np.argsort(D_, axis=1)[:,:knn]]
         y_pred = mode(y_pred, axis=1).mode.flatten()
         
         ps = prediction_strength(y_pred, y_test) # y_train, y_test 
@@ -365,7 +380,7 @@ def prediction_strength_CV_precomputed(D, method, n_splits=3):
     return np.mean(ps_s)
 
 
-def prediction_strength_CV(X, method, n_splits=3):
+def prediction_strength_CV(X, method, n_splits=3, knn=5):
     
     '''
     Calculates Prediction Strength for  data X
@@ -387,7 +402,7 @@ def prediction_strength_CV(X, method, n_splits=3):
         X_test = X[test_index]
         y_test = method.fit_predict(X_test)
 
-        clf = KNeighborsClassifier(weights='distance', p=2) 
+        clf = KNeighborsClassifier(weights='distance', p=2, n_neighbors=knn) 
         clf.fit(X_train, y_train) # fit decision regions from train data
         y_pred = clf.predict(X_test) # predict test clustering
         
