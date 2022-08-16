@@ -58,7 +58,7 @@ def plot_clustering_scatter(metrics_df,
                             y_hue_line=None
                             ):
     
-    ABBV2NAME = {'dbind':'Davis-Bouldin index',
+    ABBV2NAME = {'dbind':'Davies-Bouldin index',
                 'silh':'Silhouette score',
                 'dbcv':'DBCV',
                 'ch':'Calinski-Harabasz score',
