@@ -8,6 +8,7 @@ from scipy.stats import mode
 from utils import entropy
 from hdbscan import validity_index as DBCV
 import matplotlib.pyplot as plt
+from IPython.core.debugger import set_trace
 
 
 def metrics_formatting(data, clusters=None, metrics=None, choose_partition_by = 'dbcv'):
@@ -62,10 +63,9 @@ def plot_clustering_scatter(metrics_df,
                 'silh':'Silhouette score',
                 'dbcv':'DBCV',
                 'ch':'Calinski-Harabasz score',
-                'ps':'Prediction Score',
+                'ps':'Prediction Strength',
                 'entropy': 'Entropy',
                 'data_used': 'Data percentage'}
-    
     
     '''
     Creates 2D scatter plot given dataframe
@@ -156,6 +156,8 @@ def clustering_by_methods(data, methods_dict, precomputed=False, d=None, verbose
         if verbose:
             print('----------------------------')
             print('Clustering for', method_name)
+        
+#         try:
         cluster_results = clustering(data, 
                                     method_class, 
                                     param_range,
@@ -163,6 +165,11 @@ def clustering_by_methods(data, methods_dict, precomputed=False, d=None, verbose
                                     d=d,
                                     verbose=verbose,
                                     cluster_perc_threshold=cluster_perc_threshold)
+#         except:
+#             if verbose:
+#                 print(f'Error during metrics computation for {method_class.__name__}')
+#                 continue
+
         results[method_name] = cluster_results
     return results
 
@@ -243,18 +250,29 @@ def clustering(dataset,
             results['labels'] = labels
             
             if n > 1:
+                
                 if precomputed:
                     results['dbind'] = davies_bouldin_score_precomputed(dataset[mask][:,mask], labels)
                     results['silh'] = silhouette_score(dataset[mask][:,mask], labels, metric='precomputed')
-                    results['dbcv'] = DBCV(dataset[mask][:,mask], labels, metric='precomputed', d=d)
+                    try:
+                        results['dbcv'] = DBCV(dataset[mask][:,mask], labels, metric='precomputed', d=d)
+                    except:
+                        results['dbcv'] = np.nan
+                    
                     results['ps'] = prediction_strength_CV_precomputed(dataset[mask][:,mask], method)
 
                 else:
                     results['dbind'] = davies_bouldin_score(dataset[mask], labels)
                     results['silh'] = silhouette_score(dataset[mask], labels)
-                    results['dbcv'] = DBCV(dataset[mask], labels)
-                    results['ps'] = prediction_strength_CV(dataset[mask], method) 
-
+                    try:
+                        results['dbcv'] = DBCV(dataset[mask], labels)
+                    except:
+                        results['dbcv'] = np.nan
+                    try:
+                        results['ps'] = prediction_strength_CV(dataset[mask], method) 
+                    except:
+                        results['ps'] = np.nan
+                    
                 # data mass distribution
                 cl_dist = np.ones(n)
                 for i in range(n):

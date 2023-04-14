@@ -7,6 +7,74 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
+from scipy.stats import multivariate_normal
+RES = 100
+
+def mvn_pdf(X, mean, cov):
+    '''
+    X - [:, d]
+    mean - [1,d]
+    cov - [d,d]
+    '''
+    det = np.linalg.det(cov)
+    cov_inv = np.linalg.inv(cov)
+    d = cov.shape[0]
+    return (1./(np.sqrt( det*(2*np.pi)**d )))*np.exp(-0.5*(X-mean)@cov_inv@(X-mean).T)
+
+def get_density(X,y):
+    
+    # calculate clusters means and covariance matrices
+    means = []
+    cov = []
+    mix_comp = []
+    for y_k in np.unique(y):
+        y_k_mask = y == y_k
+        X_k = X[y_k_mask]
+        X_k_cent = X_k.copy()
+        X_k_cent -= X_k.mean(0, keepdims=True) 
+        C = X_k_cent.T@X_k_cent / (X_k_cent.shape[0]-1)
+
+        means.append(X_k.mean(0))
+        cov.append(C)
+        mix_comp.append(y_k_mask.sum() / len(y))
+
+    means = np.array(means)
+    cov = np.array(cov)
+    mix_comp = np.array(mix_comp)
+
+    x_grid = np.linspace(X[:,0].min(), X[:,0].max(), num=RES)
+    y_grid = np.linspace(X[:,1].min(), X[:,1].max(), num=RES)
+    XX = np.stack(np.meshgrid(x_grid, y_grid),axis=-1).reshape(-1,2)
+
+    clusters_likelihoods = []
+    for pi_k, mean_k, cov_k in zip(mix_comp, means, cov):
+
+        XX_likelihood = []
+        for XX_i in tqdm(XX): 
+
+            XX_i_likelihood = multivariate_normal.pdf(XX_i, mean=mean_k, cov=cov_k)
+            XX_likelihood.append(XX_i_likelihood)
+
+        XX_likelihood = np.array(XX_likelihood)
+        XX_likelihood = XX_likelihood.reshape(100,100)#[::-1,:]
+#         XX_likelihood /= XX_likelihood.sum()
+
+        clusters_likelihoods.append(XX_likelihood)
+
+    clusters_likelihoods = np.array(clusters_likelihoods)
+    
+    return clusters_likelihoods
+
+def coord_to_pix(X, n_pix=100):
+    
+    a = X.min()
+    b = X.max()
+    
+    X_ = (X - a)/(b-a+1e-3)
+    return X_*n_pix
+
+
+
 def l1_normalized_error_torch(y, y_pred):
     '''
     Absolute Percentage Error
@@ -123,15 +191,16 @@ def project_pca(data, ev_threshold=0.99, whiten=True, centering=True, random_sta
     ev_threshold: explained variance threshold
     '''
     
-    d = data.shape[1]
+    
     if centering:
         data_centered = data - data.mean(0)[None,...]
     else:
         data_centered = data
     pca = PCA(svd_solver='full', whiten=whiten, random_state=random_state)
     pca.fit(data_centered)
-    
     explained_variance = pca.explained_variance_ratio_
+    d = len(explained_variance)
+    
     ev_num = np.arange(1,d+1)[np.cumsum(explained_variance) >= ev_threshold]
     ev_num = ev_num[0]
     pca_proj = PCA(n_components=ev_num, whiten=whiten, svd_solver='full',random_state=random_state)
