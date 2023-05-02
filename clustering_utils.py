@@ -8,6 +8,7 @@ from scipy.stats import mode
 from utils import entropy
 from hdbscan import validity_index as DBCV
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
 from IPython.core.debugger import set_trace
 
 
@@ -117,6 +118,9 @@ def plot_clustering_scatter(metrics_df,
         
         plt.vlines(x_threshold, ymin=Y_MIN, ymax=Y_MAX, linestyle='--', color='orange', alpha=0.5, label=f'{x_metric_name} threshold')
         plt.fill_between(x=sorted([x_hue_line, x_threshold]), y1=Y_MIN, y2=Y_MAX, color='orange', alpha=0.1)
+    
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     
     plt.show()
 
@@ -259,7 +263,7 @@ def clustering(dataset,
                     except:
                         results['dbcv'] = np.nan
                     
-                    results['ps'] = prediction_strength_CV_precomputed(dataset[mask][:,mask], method)
+                    results['ps'] = prediction_strength_CV_precomputed(dataset[mask][:,mask], method=None, y=labels)
 
                 else:
                     results['dbind'] = davies_bouldin_score(dataset[mask], labels)
@@ -269,7 +273,7 @@ def clustering(dataset,
                     except:
                         results['dbcv'] = np.nan
                     try:
-                        results['ps'] = prediction_strength_CV(dataset[mask], method) 
+                        results['ps'] = prediction_strength_CV(dataset[mask], method=None, y=labels) 
                     except:
                         results['ps'] = np.nan
                     
@@ -366,7 +370,7 @@ def prediction_strength(y_pred, y_test):
     return min(counts) if len(counts) > 0 else 0
 
 
-def prediction_strength_CV_precomputed(D, method, n_splits=3, knn=5):
+def prediction_strength_CV_precomputed(D, method=None, y=None, n_splits=3, knn=5):
     
     '''
     Calculates Prediction Strength for precomputed data D
@@ -382,11 +386,19 @@ def prediction_strength_CV_precomputed(D, method, n_splits=3, knn=5):
         
         # getting clustering from train data
         D_train = D[train_index][:,train_index]
-        y_train = method.fit_predict(D_train) 
+        
+        if method is None:
+            y_train = y[train_index] 
+        else:
+            y_train = method.fit_predict(D_train) 
         
         # getting clustering from test data
         D_test = D[test_index][:,test_index]
-        y_test = method.fit_predict(D_test)
+        
+        if method is None:
+            y_test = y[test_index] 
+        else:
+            y_test = method.fit_predict(D_test)
         
         D_ = D[test_index][:,train_index] 
         y_pred = y_train[np.argsort(D_, axis=1)[:,:knn]]
@@ -398,7 +410,7 @@ def prediction_strength_CV_precomputed(D, method, n_splits=3, knn=5):
     return np.mean(ps_s)
 
 
-def prediction_strength_CV(X, method, n_splits=3, knn=5):
+def prediction_strength_CV(X, method=None, y=None, n_splits=3, knn=5):
     
     '''
     Calculates Prediction Strength for  data X
@@ -414,11 +426,17 @@ def prediction_strength_CV(X, method, n_splits=3, knn=5):
         
         # getting clustering from train data
         X_train = X[train_index]
-        y_train = method.fit_predict(X_train) 
+        if method is None:
+            y_train = y[train_index] 
+        else:
+            y_train = method.fit_predict(X_train)
         
         # getting clustering from test data
         X_test = X[test_index]
-        y_test = method.fit_predict(X_test)
+        if method is None:
+            y_test = y[test_index] 
+        else:
+            y_test = method.fit_predict(X_test)
 
         clf = KNeighborsClassifier(weights='distance', p=2, n_neighbors=knn) 
         clf.fit(X_train, y_train) # fit decision regions from train data
