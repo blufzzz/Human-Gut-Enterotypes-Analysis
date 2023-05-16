@@ -10,6 +10,30 @@ from sklearn.neighbors import NearestNeighbors
 from scipy.stats import multivariate_normal
 RES = 100
 
+
+def classify_enterotypes(X):
+    c_s = ['g__Bacteroides', 'g__Prevotella', 'g__Ruminococcus']
+
+    y = -np.ones((X.shape[0]))
+    
+    ent_1_mask_bact = (X['g__Bacteroides'] > 0.2 ) * (X['g__Prevotella'] < 0.05 ) * (X['g__Ruminococcus'] < 0.015 )
+    ent_2_mask_bact = (X['g__Bacteroides'] <= 0.2 ) * (X['g__Prevotella'] > 0.05 ) * (X['g__Ruminococcus'] < 0.020 )    
+    ent_3_mask_bact = (X['g__Bacteroides'] < 0.2 ) * (X['g__Prevotella'] < 0.05 ) * (X['g__Ruminococcus'] < 0.07 )    
+    
+    y[ent_1_mask_bact] = 0
+    y[ent_2_mask_bact] = 1    
+    y[ent_3_mask_bact] = 2    
+    
+    return y
+
+def swap_columns(df, col1, col2):
+    col_list = list(df.columns)
+    x, y = col_list.index(col1), col_list.index(col2)
+    col_list[y], col_list[x] = col_list[x], col_list[y]
+    df = df[col_list]
+    return df
+
+
 def mvn_pdf(X, mean, cov):
     '''
     X - [:, d]
