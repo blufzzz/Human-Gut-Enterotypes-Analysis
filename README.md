@@ -8,7 +8,10 @@ It is advised to run notebooks in the order mentioned below:
 4. Autoencoders.ipynb
 5. Clustering.ipynb
 
-Synthetic_data.ipynb - generates simple synthetic dataset. Re-run the whole pipeline (1-5) for a synthetic dataset results.
+Synthetic_data.ipynb - generates simple synthetic datasets. Re-run the whole pipeline (1-4) for synthetic datasets results.
+Clustering-synth.ipynb - generates clustering results (5) for synthetic datasets.
+Clustering-small.ipynb - generates clustering results for original datasets, see Supporting information Text S3 for details.
+Clustering-ent.ipynb - generates clustering metrics based on pre-defined artificial partition into enterotypes, see Supporting information Text S4 for details.
 Visualization_separate.ipynb - visualizes continuous specificity of the data points distribution.
 Visualization_merged.ipynb - demonstrates batch effect for merged AGP and HMP datasets.
 
